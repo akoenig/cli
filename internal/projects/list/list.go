@@ -18,49 +18,90 @@ func Run() error {
 		return err
 	}
 
-	req, err := http.NewRequest("GET", "https://api.supabase.io/v1/projects", nil)
-	if err != nil {
-		return err
+	var orgs []struct {
+		InternalId uint   `json:"id"`
+		Id         string `json:"slug"`
+		Name       string `json:"name"`
 	}
-	req.Header.Add("Authorization", "Bearer "+string(accessToken))
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, err := io.ReadAll(resp.Body)
+	{
+		req, err := http.NewRequest("GET", "https://api.supabase.io/v1/organizations", nil)
 		if err != nil {
-			return fmt.Errorf("Unexpected error retrieving projects: %w", err)
+			return err
+		}
+		req.Header.Add("Authorization", "Bearer "+string(accessToken))
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			return err
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			body, err := io.ReadAll(resp.Body)
+			if err != nil {
+				return fmt.Errorf("Unexpected error retrieving organizations: %w", err)
+			}
+
+			return errors.New("Unexpected error retrieving organizations: " + string(body))
 		}
 
-		return errors.New("Unexpected error retrieving projects: " + string(body))
-	}
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return err
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return err
+		}
+		if err := json.Unmarshal(body, &orgs); err != nil {
+			return err
+		}
 	}
 
 	var projects []struct {
-		OrgId     uint   `json:"organization_id"`
-		Id        uint   `json:"id"`
-		Name      string `json:"name"`
-		Ref       string `json:"ref"`
-		Region    string `json:"region"`
-		CreatedAt string `json:"created_at"`
+		InternalOrgId uint   `json:"organization_id"`
+		Id            string `json:"ref"`
+		Name          string `json:"name"`
+		Region        string `json:"region"`
+		CreatedAt     string `json:"created_at"`
 	}
-	if err := json.Unmarshal(body, &projects); err != nil {
-		return err
+	{
+		req, err := http.NewRequest("GET", "https://api.supabase.io/v1/projects", nil)
+		if err != nil {
+			return err
+		}
+		req.Header.Add("Authorization", "Bearer "+string(accessToken))
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			return err
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			body, err := io.ReadAll(resp.Body)
+			if err != nil {
+				return fmt.Errorf("Unexpected error retrieving projects: %w", err)
+			}
+
+			return errors.New("Unexpected error retrieving projects: " + string(body))
+		}
+
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return err
+		}
+		if err := json.Unmarshal(body, &projects); err != nil {
+			return err
+		}
 	}
 
-	// TODO: Add CREATED AT
-	table := `|ORG ID|ID|NAME|REF|REGION|
+	table := `|ORG ID|ID|NAME|REGION|CREATED AT|
 |-|-|-|-|-|
 `
 	for _, project := range projects {
-		table += fmt.Sprintf("|`%d`|`%d`|`%s`|`%s`|`%s`|\n", project.OrgId, project.Id, strings.ReplaceAll(project.Name, "|", "\\|"), project.Ref, utils.RegionMap[project.Region])
+		var orgId string
+		for _, org := range orgs {
+			if org.InternalId == project.InternalOrgId {
+				orgId = org.Id
+			}
+		}
+
+		table += fmt.Sprintf("|`%s`|`%s`|`%s`|`%s`|`%s`|\n", orgId, project.Id, strings.ReplaceAll(project.Name, "|", "\\|"), utils.RegionMap[project.Region], project.CreatedAt)
 	}
 
 	r, err := glamour.NewTermRenderer(
